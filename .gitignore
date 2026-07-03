@@ -1,140 +1,134 @@
-docs/claude-relay-service/
-.codex
 
 # ===================
-# Go 后端
-# ===================
-# 二进制文件
-*.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-backend/bin/
-backend/server
-backend/sub2api
-backend/main
-
-# Go 测试二进制
-*.test
-
-# 测试覆盖率
-*.out
-coverage.html
-
-# 依赖（使用 go mod）
-vendor/
-
-# Go 编译缓存
-backend/.gocache/
-
-# ===================
-# Node.js / Vue 前端
-# ===================
-node_modules/
-frontend/node_modules/
-frontend/dist/
-*.local
-*.tsbuildinfo
-vite.config.d.ts
-vite.config.js.timestamp-*
-
-# 日志
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# ===================
-# 环境配置
-# ===================
-.env
-.env.local
-.env.*.local
-*.env
-!.env.example
-docker-compose.override.yml
-
-# ===================
-# IDE / 编辑器
-# ===================
-.idea/
-.vscode/
-*.swp
-*.swo
 *~
-.project
-.settings/
-.classpath
-
-# ===================
-# 操作系统
-# ===================
-.DS_Store
-Thumbs.db
-Desktop.ini
-
-# ===================
-# 临时文件
-# ===================
-tmp/
-temp/
-*.tmp
-*.temp
-*.log
-*.bak
-.cache/
-.dev/
-.serena/
-
-# ===================
-# 构建产物
-# ===================
-dist/
-build/
-release/
-
-# 后端嵌入的前端构建产物
-# Keep a placeholder file so `//go:embed all:dist` always has a match in CI/lint,
-# while still ignoring generated frontend build outputs.
-backend/internal/web/dist/
+*.7z
+AGENTS.md
+aicodex
+backend/bin/
+backend/cmd/server/server
+backend/config.yaml
+backend/data/
+backend/.gocache/
+backend/.installed
 !backend/internal/web/dist/
+backend/internal/web/dist/
 backend/internal/web/dist/*
 !backend/internal/web/dist/.keep
-
-# 后端运行时缓存数据
-backend/data/
-
-# ===================
-# 本地配置文件（包含敏感信息）
-# ===================
-backend/config.yaml
-deploy/config.yaml
-backend/.installed
-
-# ===================
-# 其他
-# ===================
-tests
-CLAUDE.md
+backend/main
+backend/server
+backend/sub2api
+*.backup
+*.bak
+build/
+.cache/
+.classpath
 .claude
-scripts
-.code-review-state
-#openspec/
+CLAUDE.md
+cloudflare.ini
 code-reviews/
-AGENTS.md
-backend/cmd/server/server
+.code-review-state
+.codex
+.codex/
+coverage.html
+*.crt
+data/
+*.db
+deploy/config.yaml
 deploy/docker-compose.override.yml
-.gocache/
-vite.config.js
+Desktop.ini
+.dev/
+dist/
+*.dll
+docker-compose.override.yml
+docker-data/
 docs/*
-!docs/PAYMENT.md
-!docs/PAYMENT_CN.md
 !docs/ADMIN_PAYMENT_INTEGRATION_API.md
+docs/claude-relay-service/
 !docs/legal/
 !docs/legal/*.md
-.serena/
-.codex/
+!docs/PAYMENT_CN.md
+!docs/PAYMENT.md
+.DS_Store
+*.dump
+*.dylib
+*.env
+.env
+.env.*
+!.env.example
+.env.*.local
+.env.local
+*.exe
+*.exe~
 frontend/coverage/
-aicodex
+frontend/dist/
+frontend/node_modules/
+.gocache/
+# Go 后端
+# Go 测试二进制
+# Go 编译缓存
+.idea/
+id_ed25519
+# IDE / 编辑器
+id_rsa
+# Keep a placeholder file so `//go:embed all:dist` always has a match in CI/lint,
+*.key
+*.local
+# ===== local runtime secrets =====
+*.log
+logs/
+# Node.js / Vue 前端
+node_modules/
+npm-debug.log*
+#openspec/
+*.out
 output/
+*.p12
+*.pem
+*.pfx
+pnpm-debug.log*
+.project
+*.rar
+release/
+# ===== safety rules added by safe_push_sub2api.sh =====
+scripts
+.serena/
+.settings/
+*.so
+*.sql
+*.sqlite
+*.sqlite3
+storage/logs/
+*.swo
+*.swp
+*.tar
+*.tar.gz
+*.temp
+temp/
+*.test
+tests
+Thumbs.db
+*.tmp
+tmp/
+*.tsbuildinfo
+uploads/
+vendor/
+vite.config.d.ts
+vite.config.js
+vite.config.js.timestamp-*
+.vscode/
+# while still ignoring generated frontend build outputs.
+yarn-debug.log*
+yarn-error.log*
+*.zip
+# 临时文件
+# 二进制文件
+# 依赖（使用 go mod）
+# 其他
+# 后端嵌入的前端构建产物
+# 后端运行时缓存数据
+# 操作系统
+# 日志
+# 本地配置文件（包含敏感信息）
+# 构建产物
+# 测试覆盖率
+# 环境配置
