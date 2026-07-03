@@ -1,7 +1,9 @@
 package handler
 
 import (
+	"context"
 	"sort"
+	"strings"
 
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
@@ -24,6 +26,7 @@ type AvailableChannelHandler struct {
 	channelService *service.ChannelService
 	apiKeyService  *service.APIKeyService
 	settingService *service.SettingService
+	accountRepo    service.AccountRepository
 }
 
 // NewAvailableChannelHandler 创建用户侧可用渠道 handler。
@@ -31,11 +34,13 @@ func NewAvailableChannelHandler(
 	channelService *service.ChannelService,
 	apiKeyService *service.APIKeyService,
 	settingService *service.SettingService,
+	accountRepo service.AccountRepository,
 ) *AvailableChannelHandler {
 	return &AvailableChannelHandler{
 		channelService: channelService,
 		apiKeyService:  apiKeyService,
 		settingService: settingService,
+		accountRepo:    accountRepo,
 	}
 }
 
@@ -152,7 +157,12 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 		if len(visibleGroups) == 0 {
 			continue
 		}
-		sections := buildPlatformSections(ch, visibleGroups)
+		accountModelsByPlatform, err := h.accountConfiguredModelsByPlatform(c.Request.Context(), visibleGroups)
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+		sections := buildPlatformSections(ch, visibleGroups, accountModelsByPlatform)
 		if len(sections) == 0 {
 			continue
 		}
@@ -172,6 +182,7 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 func buildPlatformSections(
 	ch service.AvailableChannel,
 	visibleGroups []userAvailableGroup,
+	fallbackModelsByPlatform map[string][]userSupportedModel,
 ) []userChannelPlatformSection {
 	groupsByPlatform := make(map[string][]userAvailableGroup, 4)
 	for _, g := range visibleGroups {
@@ -193,10 +204,14 @@ func buildPlatformSections(
 	sections := make([]userChannelPlatformSection, 0, len(platforms))
 	for _, platform := range platforms {
 		platformSet := map[string]struct{}{platform: {}}
+		models := toUserSupportedModels(ch.SupportedModels, platformSet)
+		if len(models) == 0 && fallbackModelsByPlatform != nil {
+			models = fallbackModelsByPlatform[platform]
+		}
 		sections = append(sections, userChannelPlatformSection{
 			Platform:        platform,
 			Groups:          groupsByPlatform[platform],
-			SupportedModels: toUserSupportedModels(ch.SupportedModels, platformSet),
+			SupportedModels: models,
 		})
 	}
 	return sections
@@ -222,6 +237,115 @@ func filterUserVisibleGroups(
 		})
 	}
 	return visible
+}
+
+// accountConfiguredModelsByPlatform 从当前用户可见分组中的账号配置里汇总模型列表。
+// 用途：当管理员只在账号编辑弹窗里维护模型限制/模型映射，而没有单独配置渠道模型定价时，
+// 用户端模型广场仍然能展示这些可调用模型 ID。
+func (h *AvailableChannelHandler) accountConfiguredModelsByPlatform(
+	ctx context.Context,
+	groups []userAvailableGroup,
+) (map[string][]userSupportedModel, error) {
+	if h.accountRepo == nil || h.channelService == nil || len(groups) == 0 {
+		return nil, nil
+	}
+
+	seenGroups := make(map[int64]struct{}, len(groups))
+	seenModels := make(map[string]map[string]struct{})
+	modelsByPlatform := make(map[string][]userSupportedModel)
+
+	for _, g := range groups {
+		if g.ID <= 0 || g.Platform == "" {
+			continue
+		}
+		if _, ok := seenGroups[g.ID]; ok {
+			continue
+		}
+		seenGroups[g.ID] = struct{}{}
+
+		accounts, err := h.accountRepo.ListByGroup(ctx, g.ID)
+		if err != nil {
+			return nil, err
+		}
+		for i := range accounts {
+			acc := &accounts[i]
+			if acc == nil || !acc.IsActive() || acc.Platform != g.Platform {
+				continue
+			}
+			for _, model := range accountConfiguredModelNames(acc) {
+				if model == "" {
+					continue
+				}
+				if seenModels[g.Platform] == nil {
+					seenModels[g.Platform] = make(map[string]struct{})
+				}
+				modelKey := strings.ToLower(model)
+				if _, exists := seenModels[g.Platform][modelKey]; exists {
+					continue
+				}
+				seenModels[g.Platform][modelKey] = struct{}{}
+				modelsByPlatform[g.Platform] = append(modelsByPlatform[g.Platform], userSupportedModel{
+					Name:     model,
+					Platform: g.Platform,
+					Pricing:  toUserPricing(h.channelService.GetChannelModelPricing(ctx, g.ID, model)),
+				})
+			}
+		}
+	}
+
+	for platform := range modelsByPlatform {
+		sort.Slice(modelsByPlatform[platform], func(i, j int) bool {
+			return modelsByPlatform[platform][i].Name < modelsByPlatform[platform][j].Name
+		})
+	}
+	return modelsByPlatform, nil
+}
+
+func accountConfiguredModelNames(acc *service.Account) []string {
+	if acc == nil {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	out := make([]string, 0)
+
+	add := func(model string) {
+		model = strings.TrimSpace(model)
+		if model == "" {
+			return
+		}
+		key := strings.ToLower(model)
+		if _, ok := seen[key]; ok {
+			return
+		}
+		seen[key] = struct{}{}
+		out = append(out, model)
+	}
+
+	// 账号模型限制当前主要存储为 credentials.model_mapping：
+	// - 模型白名单模式：{"gpt-5.5":"gpt-5.5"}
+	// - 模型映射模式：{"custom-name":"upstream-name"}
+	// 对用户端来说，应该展示客户端可填写的请求模型 ID，即 map key。
+	for model := range acc.GetModelMapping() {
+		add(model)
+	}
+
+	// 兼容旧数据：credentials.model_whitelist 可能是 []string 或 []any。
+	if acc.Credentials != nil {
+		switch raw := acc.Credentials["model_whitelist"].(type) {
+		case []string:
+			for _, model := range raw {
+				add(model)
+			}
+		case []any:
+			for _, item := range raw {
+				if model, ok := item.(string); ok {
+					add(model)
+				}
+			}
+		}
+	}
+
+	return out
 }
 
 // toUserSupportedModels 将 service 层支持模型转换为用户 DTO（字段白名单）。
