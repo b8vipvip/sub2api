@@ -1,0 +1,3 @@
+services:
+  sub2api:
+    image: ghcr.io/b8vipvip/sub2api:latest
