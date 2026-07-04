@@ -5,8 +5,6 @@ import (
 	"sort"
 	"strings"
 
-	dbent "github.com/Wei-Shaw/sub2api/ent"
-	entaccount "github.com/Wei-Shaw/sub2api/ent/account"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/response"
 	"github.com/Wei-Shaw/sub2api/internal/server/middleware"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -22,7 +20,6 @@ type AvailableChannelHandler struct {
 	apiKeyService  *service.APIKeyService
 	settingService *service.SettingService
 	accountRepo    service.AccountRepository
-	entClient      *dbent.Client
 }
 
 // NewAvailableChannelHandler 创建用户侧模型广场 handler。
@@ -31,14 +28,12 @@ func NewAvailableChannelHandler(
 	apiKeyService *service.APIKeyService,
 	settingService *service.SettingService,
 	accountRepo service.AccountRepository,
-	entClient *dbent.Client,
 ) *AvailableChannelHandler {
 	return &AvailableChannelHandler{
 		channelService: channelService,
 		apiKeyService:  apiKeyService,
 		settingService: settingService,
 		accountRepo:    accountRepo,
-		entClient:      entClient,
 	}
 }
 
@@ -108,7 +103,7 @@ type userAvailableChannel struct {
 // List 列出当前用户可见的模型广场。
 // GET /api/v1/channels/available
 func (h *AvailableChannelHandler) List(c *gin.Context) {
-	_, ok := middleware.GetAuthSubjectFromContext(c)
+	subject, ok := middleware.GetAuthSubjectFromContext(c)
 	if !ok {
 		response.Unauthorized(c, "User not authenticated")
 		return
@@ -119,25 +114,31 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 		return
 	}
 
-	// 优先使用管理员后台「账号管理」里调度开关为开启状态账号的模型限制/白名单。
-	// 这样管理员只维护账号白名单，用户端模型广场就能自动展示真实可调度模型。
-	accountChannel, err := h.schedulableAccountModelChannel(c.Request.Context())
-	if err != nil {
-		response.ErrorFrom(c, err)
-		return
-	}
-	if accountChannel != nil && len(accountChannel.Platforms) > 0 {
-		response.Success(c, []userAvailableChannel{*accountChannel})
-		return
-	}
-
-	// 没有账号白名单时，保留旧逻辑：从渠道配置里展示模型。
-	subject, _ := middleware.GetAuthSubjectFromContext(c)
 	userGroups, err := h.apiKeyService.GetAvailableGroups(c.Request.Context(), subject.UserID)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
 	}
+
+	visibleGroups := groupsToUserAvailable(userGroups)
+	accountModelsByPlatform, err := h.accountConfiguredModelsByPlatform(c.Request.Context(), visibleGroups)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+	if len(accountModelsByPlatform) > 0 {
+		sections := buildAccountModelSections(visibleGroups, accountModelsByPlatform)
+		if len(sections) > 0 {
+			response.Success(c, []userAvailableChannel{{
+				Name:        "模型广场",
+				Description: "从管理员后台调度开关开启账号的模型白名单自动汇总。",
+				Platforms:   sections,
+			}})
+			return
+		}
+	}
+
+	// 没有账号白名单时，保留旧逻辑：从渠道配置里展示模型。
 	allowedGroupIDs := make(map[int64]struct{}, len(userGroups))
 	for i := range userGroups {
 		allowedGroupIDs[userGroups[i].ID] = struct{}{}
@@ -158,12 +159,12 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 		if len(visibleGroups) == 0 {
 			continue
 		}
-		accountModelsByPlatform, err := h.accountConfiguredModelsByPlatform(c.Request.Context(), visibleGroups)
+		fallbackModelsByPlatform, err := h.accountConfiguredModelsByPlatform(c.Request.Context(), visibleGroups)
 		if err != nil {
 			response.ErrorFrom(c, err)
 			return
 		}
-		sections := buildPlatformSections(ch, visibleGroups, accountModelsByPlatform)
+		sections := buildPlatformSections(ch, visibleGroups, fallbackModelsByPlatform)
 		if len(sections) == 0 {
 			continue
 		}
@@ -177,135 +178,11 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 	response.Success(c, out)
 }
 
-// schedulableAccountModelChannel 从所有调度开关开启且状态正常的账号中读取模型白名单/模型映射。
-func (h *AvailableChannelHandler) schedulableAccountModelChannel(ctx context.Context) (*userAvailableChannel, error) {
-	if h.entClient == nil {
-		return nil, nil
-	}
-
-	accounts, err := h.entClient.Account.Query().
-		Where(
-			entaccount.StatusEQ(service.StatusActive),
-			entaccount.SchedulableEQ(true),
-		).
-		WithGroups().
-		All(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	type platformBucket struct {
-		groups map[int64]userAvailableGroup
-		models map[string]userSupportedModel
-	}
-
-	buckets := make(map[string]*platformBucket)
-	for _, acc := range accounts {
-		if acc == nil || acc.Platform == "" {
-			continue
-		}
-		svcAcc := &service.Account{
-			Platform:     acc.Platform,
-			Status:       acc.Status,
-			Credentials:  acc.Credentials,
-			Schedulable:  acc.Schedulable,
-			Concurrency:  acc.Concurrency,
-		}
-		models := accountConfiguredModelNames(svcAcc)
-		if len(models) == 0 {
-			continue
-		}
-
-		bucket := buckets[acc.Platform]
-		if bucket == nil {
-			bucket = &platformBucket{
-				groups: make(map[int64]userAvailableGroup),
-				models: make(map[string]userSupportedModel),
-			}
-			buckets[acc.Platform] = bucket
-		}
-
-		groups := accountUserGroups(acc)
-		for _, g := range groups {
-			bucket.groups[g.ID] = g
-		}
-
-		for _, model := range models {
-			model = strings.TrimSpace(model)
-			if model == "" {
-				continue
-			}
-			key := strings.ToLower(model)
-			if _, exists := bucket.models[key]; exists {
-				continue
-			}
-			bucket.models[key] = userSupportedModel{
-				Name:     model,
-				Platform: acc.Platform,
-				Pricing:  h.firstPricingForModel(ctx, groups, model),
-			}
-		}
-	}
-
-	platforms := make([]string, 0, len(buckets))
-	for platform, bucket := range buckets {
-		if len(bucket.models) > 0 {
-			platforms = append(platforms, platform)
-		}
-	}
-	sort.Strings(platforms)
-
-	sections := make([]userChannelPlatformSection, 0, len(platforms))
-	for _, platform := range platforms {
-		bucket := buckets[platform]
-		groups := make([]userAvailableGroup, 0, len(bucket.groups))
-		for _, g := range bucket.groups {
-			groups = append(groups, g)
-		}
-		sort.Slice(groups, func(i, j int) bool {
-			if groups[i].Name == groups[j].Name {
-				return groups[i].ID < groups[j].ID
-			}
-			return groups[i].Name < groups[j].Name
-		})
-
-		models := make([]userSupportedModel, 0, len(bucket.models))
-		for _, m := range bucket.models {
-			models = append(models, m)
-		}
-		sort.Slice(models, func(i, j int) bool {
-			return strings.ToLower(models[i].Name) < strings.ToLower(models[j].Name)
-		})
-
-		sections = append(sections, userChannelPlatformSection{
-			Platform:        platform,
-			Groups:          groups,
-			SupportedModels: models,
-		})
-	}
-
-	return &userAvailableChannel{
-		Name:        "模型广场",
-		Description: "从管理员后台调度开关开启账号的模型白名单自动汇总。",
-		Platforms:   sections,
-	}, nil
-}
-
-func accountUserGroups(acc *dbent.Account) []userAvailableGroup {
-	if acc == nil {
-		return nil
-	}
-	out := make([]userAvailableGroup, 0, len(acc.Edges.Groups))
-	seen := make(map[int64]struct{}, len(acc.Edges.Groups))
-	for _, g := range acc.Edges.Groups {
-		if g == nil {
-			continue
-		}
-		platform := strings.TrimSpace(g.Platform)
-		if platform == "" {
-			platform = acc.Platform
-		}
-		if platform != acc.Platform {
+func groupsToUserAvailable(groups []service.AvailableGroupRef) []userAvailableGroup {
+	out := make([]userAvailableGroup, 0, len(groups))
+	seen := make(map[int64]struct{}, len(groups))
+	for _, g := range groups {
+		if g.ID <= 0 || g.Platform == "" {
 			continue
 		}
 		if _, ok := seen[g.ID]; ok {
@@ -315,37 +192,44 @@ func accountUserGroups(acc *dbent.Account) []userAvailableGroup {
 		out = append(out, userAvailableGroup{
 			ID:               g.ID,
 			Name:             g.Name,
-			Platform:         platform,
+			Platform:         g.Platform,
 			SubscriptionType: g.SubscriptionType,
 			RateMultiplier:   g.RateMultiplier,
 			IsExclusive:      g.IsExclusive,
 		})
 	}
-	if len(out) == 0 {
-		out = append(out, userAvailableGroup{
-			ID:             -acc.ID,
-			Name:           acc.Platform,
-			Platform:       acc.Platform,
-			RateMultiplier: 1,
-			IsExclusive:    false,
-		})
-	}
 	return out
 }
 
-func (h *AvailableChannelHandler) firstPricingForModel(ctx context.Context, groups []userAvailableGroup, model string) *userSupportedModelPricing {
-	if h.channelService == nil {
-		return nil
-	}
-	for _, g := range groups {
-		if g.ID <= 0 {
+func buildAccountModelSections(
+	visibleGroups []userAvailableGroup,
+	modelsByPlatform map[string][]userSupportedModel,
+) []userChannelPlatformSection {
+	groupsByPlatform := make(map[string][]userAvailableGroup, 4)
+	for _, g := range visibleGroups {
+		if g.Platform == "" {
 			continue
 		}
-		if pricing := toUserPricing(h.channelService.GetChannelModelPricing(ctx, g.ID, model)); pricing != nil {
-			return pricing
+		groupsByPlatform[g.Platform] = append(groupsByPlatform[g.Platform], g)
+	}
+
+	platforms := make([]string, 0, len(modelsByPlatform))
+	for platform, models := range modelsByPlatform {
+		if platform != "" && len(models) > 0 {
+			platforms = append(platforms, platform)
 		}
 	}
-	return nil
+	sort.Strings(platforms)
+
+	sections := make([]userChannelPlatformSection, 0, len(platforms))
+	for _, platform := range platforms {
+		sections = append(sections, userChannelPlatformSection{
+			Platform:        platform,
+			Groups:          groupsByPlatform[platform],
+			SupportedModels: modelsByPlatform[platform],
+		})
+	}
+	return sections
 }
 
 // buildPlatformSections 把一个渠道按 visibleGroups 的平台集合拆成有序的 section 列表。
@@ -409,7 +293,7 @@ func filterUserVisibleGroups(
 	return visible
 }
 
-// accountConfiguredModelsByPlatform 从当前用户可见分组中的账号配置里汇总模型列表。
+// accountConfiguredModelsByPlatform 从当前用户可见分组中的调度账号配置里汇总模型列表。
 func (h *AvailableChannelHandler) accountConfiguredModelsByPlatform(
 	ctx context.Context,
 	groups []userAvailableGroup,
