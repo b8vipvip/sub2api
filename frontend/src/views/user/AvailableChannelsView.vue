@@ -95,7 +95,7 @@
                 <span class="rounded-full bg-white/20 px-3 py-1 text-xs font-medium">共 {{ modelCards.length }} 个模型</span>
               </div>
               <p class="mt-2 max-w-3xl text-sm text-primary-50/90">
-                查看所有可用的 AI 模型供应商，包括众多知名供应商的模型。
+                查看管理员后台调度开关已开启账号的模型白名单。这里展示的模型 ID 可直接用于 OpenAI 兼容接口调用。
               </p>
             </div>
             <button
@@ -143,6 +143,7 @@
         <div v-else-if="filteredModels.length === 0" class="card py-16 text-center">
           <Icon name="inbox" size="xl" class="mx-auto mb-3 h-12 w-12 text-gray-400" />
           <p class="text-sm text-gray-500 dark:text-gray-400">暂无匹配模型</p>
+          <p class="mt-2 text-xs text-gray-400 dark:text-gray-500">请检查管理员后台账号是否为“正常”状态、调度开关是否开启、模型白名单是否已填写。</p>
         </div>
 
         <div v-else class="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
@@ -202,7 +203,6 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import Icon from '@/components/icons/Icon.vue'
@@ -234,13 +234,16 @@ interface MarketplaceModel {
   pricing: UserSupportedModelPricing | null
   channels: string[]
   groups: MarketplaceGroup[]
-  description: string
 }
 
 type BillingFilter = 'all' | BillingMode | 'none'
 
+interface ModelCatalogEntry {
+  pricing?: UserSupportedModelPricing
+  description: string
+}
+
 const { t } = useI18n()
-const route = useRoute()
 const appStore = useAppStore()
 
 const channels = ref<UserAvailableChannel[]>([])
@@ -258,26 +261,23 @@ const billingOptions: Array<{ value: BillingMode | 'none'; label: string }> = [
   { value: 'none', label: '暂无价格' },
 ]
 
-const DEFAULT_MODELS: MarketplaceModel[] = [
-  makeModel('gpt-5.4', 'openai', 'OpenAI GPT', pToken(0.025, 0.15, 0.003), '高速通用旗舰模型，适合复杂问题和高质量输出。深度问答、内容创作、复杂分析、代码效果最好，推理和表达都很强。'),
-  makeModel('gpt-5.4-mini', 'openai', 'OpenAI GPT', pToken(0.007, 0.045, 0.001), '高性价比版本，适合大多数用户。日常聊天、问答、文案、轻量代码便宜、速度快、性价比高。'),
-  makeModel('gpt-5.5', 'openai', 'OpenAI GPT', pToken(0.05, 0.3, 0.005), '高性能通用大模型，适合复杂问答、写作、代码、分析、总结和多步骤任务，综合能力强，适合日常主力使用。'),
-  makeModel('gpt-image-2-2k', 'openai', 'image-2', pRequest(0.9, BILLING_MODE_IMAGE), '生图模型，看文档教程接入。'),
-  makeModel('gpt-image-2-4k', 'openai', 'image-2', pRequest(0.9, BILLING_MODE_IMAGE), '生图模型，看文档教程接入。'),
-  makeModel('claude-haiku-4-5-20251001', 'anthropic', 'claude kiro', pToken(0.16, 0.8, 0.02, 0.16), '轻量快速模型，适合低成本高频使用。简单问答、总结、改写、基础文案、速度快、成本低。'),
-  makeModel('claude-opus-4-7', 'anthropic', 'svip', pToken(0.8, 4.0, 1.0), '强力 Claude Opus 模型，适合高难推理、长文分析、复杂代码和严肃写作。'),
-  makeModel('claude-opus-4-8', 'anthropic', 'svip', pToken(0.8, 4.0, 1.0), '高性能 Claude Opus 模型，适合深度研究、复杂规划、代码架构和高质量内容生成。'),
-  makeModel('claude-sonnet-4-6', 'anthropic', 'claude kiro', pToken(0.4, 2.4, 0.06, 0.48), '更新版 Sonnet，适合大多数通用场景。日常问答、内容生成、分析、代码等综合表现好，适合主力替换。'),
-  makeModel('codex-auto-review', 'openai', 'GPT pro', pToken(0.75, 4.5, 0.075), '面向代码审查、自动评审和开发辅助的模型，适合代码理解、审查建议、重构和自动化开发流程。'),
-  makeModel('NanoBanana', 'gemini', 'Gemini', pRequest(0.042, BILLING_MODE_PER_REQUEST), '谷歌香蕉生图模型，支持 2k-4k。'),
-]
+const MODEL_CATALOG: Record<string, ModelCatalogEntry> = {
+  'gpt-5.4': { pricing: pToken(0.025, 0.15, 0.003), description: '高速通用旗舰模型，适合复杂问题和高质量输出。深度问答、内容创作、复杂分析、代码效果最好，推理和表达都很强。' },
+  'gpt-5.4-mini': { pricing: pToken(0.007, 0.045, 0.001), description: '高性价比版本，适合大多数用户。日常聊天、问答、文案、轻量代码便宜、速度快、性价比高。' },
+  'gpt-5.5': { pricing: pToken(0.05, 0.3, 0.005), description: '高性能通用大模型，适合复杂问答、写作、代码、分析、总结和多步骤任务，综合能力强，适合日常主力使用。' },
+  'gpt-image-2': { pricing: pRequest(0.9, BILLING_MODE_IMAGE), description: '生图模型，看文档教程接入。' },
+  'gpt-image-2-2k': { pricing: pRequest(0.9, BILLING_MODE_IMAGE), description: '生图模型，看文档教程接入。' },
+  'gpt-image-2-4k': { pricing: pRequest(0.9, BILLING_MODE_IMAGE), description: '生图模型，看文档教程接入。' },
+  'claude-haiku-4-5-20251001': { pricing: pToken(0.16, 0.8, 0.02, 0.16), description: '轻量快速模型，适合低成本高频使用。简单问答、总结、改写、基础文案、速度快、成本低。' },
+  'claude-opus-4-7': { pricing: pToken(0.8, 4.0, 1.0), description: '强力 Claude Opus 模型，适合高难推理、长文分析、复杂代码和严肃写作。' },
+  'claude-opus-4-8': { pricing: pToken(0.8, 4.0, 1.0), description: '高性能 Claude Opus 模型，适合深度研究、复杂规划、代码架构和高质量内容生成。' },
+  'claude-sonnet-4-6': { pricing: pToken(0.4, 2.4, 0.06, 0.48), description: '更新版 Sonnet，适合大多数通用场景。日常问答、内容生成、分析、代码等综合表现好，适合主力替换。' },
+  'codex-auto-review': { pricing: pToken(0.75, 4.5, 0.075), description: '面向代码审查、自动评审和开发辅助的模型，适合代码理解、审查建议、重构和自动化开发流程。' },
+  nanobanana: { pricing: pRequest(0.042, BILLING_MODE_PER_REQUEST), description: '谷歌香蕉生图模型，支持 2k-4k。' },
+}
 
 const modelCards = computed<MarketplaceModel[]>(() => {
   const models = new Map<string, MarketplaceModel>()
-
-  for (const model of DEFAULT_MODELS) {
-    models.set(model.key, cloneMarketplaceModel(model))
-  }
 
   for (const channel of channels.value) {
     for (const section of channel.platforms) {
@@ -289,9 +289,8 @@ const modelCards = computed<MarketplaceModel[]>(() => {
           existing.channels.push(channel.name)
         }
 
-        if (model.pricing) {
-          existing.pricing = model.pricing
-        }
+        const catalog = catalogForModel(model.name)
+        existing.pricing = model.pricing ?? catalog?.pricing ?? existing.pricing
 
         for (const group of section.groups) {
           if (!existing.groups.some((g) => g.id === group.id || g.name === group.name)) {
@@ -309,7 +308,7 @@ const modelCards = computed<MarketplaceModel[]>(() => {
     }
   }
 
-  return Array.from(models.values()).sort((a, b) => modelSortValue(a) - modelSortValue(b))
+  return Array.from(models.values()).sort((a, b) => a.name.localeCompare(b.name))
 })
 
 const platformOptions = computed(() =>
@@ -332,31 +331,13 @@ const filteredModels = computed(() => {
       model.name.toLowerCase().includes(q) ||
       platformLabel(model.platform).toLowerCase().includes(q) ||
       model.platform.toLowerCase().includes(q) ||
-      model.description.toLowerCase().includes(q) ||
+      modelDescription(model).toLowerCase().includes(q) ||
       model.channels.some((channel) => channel.toLowerCase().includes(q)) ||
       model.groups.some((group) => group.name.toLowerCase().includes(q))
 
     return platformHit && groupHit && billingHit && textHit
   })
 })
-
-function makeModel(
-  name: string,
-  platform: string,
-  group: string,
-  pricing: UserSupportedModelPricing,
-  description: string,
-): MarketplaceModel {
-  return {
-    key: `${platform}:${name}`,
-    name,
-    platform,
-    pricing,
-    description,
-    channels: [platform === 'gemini' ? 'google' : platform],
-    groups: [{ id: -Math.abs(hashCode(`${platform}:${group}`)), name: group, rateMultiplier: 1, isExclusive: false }],
-  }
-}
 
 function pToken(input: number, output: number, cacheRead: number, cacheWrite = 0): UserSupportedModelPricing {
   return {
@@ -384,25 +365,23 @@ function pRequest(price: number, mode: BillingMode): UserSupportedModelPricing {
   }
 }
 
-function cloneMarketplaceModel(model: MarketplaceModel): MarketplaceModel {
-  return {
-    ...model,
-    channels: [...model.channels],
-    groups: model.groups.map((group) => ({ ...group })),
-    pricing: model.pricing ? { ...model.pricing, intervals: [...(model.pricing.intervals ?? [])] } : null,
-  }
-}
-
 function createMarketplaceModel(key: string, platform: string, model: UserSupportedModel): MarketplaceModel {
+  const catalog = catalogForModel(model.name)
   return {
     key,
     name: model.name,
     platform: model.platform || platform,
-    pricing: model.pricing,
+    pricing: model.pricing ?? catalog?.pricing ?? null,
     channels: [],
     groups: [],
-    description: modelDescriptionFromName(model.name, model.platform || platform),
   }
+}
+
+function catalogForModel(name: string): ModelCatalogEntry | undefined {
+  const lower = name.toLowerCase()
+  if (MODEL_CATALOG[lower]) return MODEL_CATALOG[lower]
+  if (lower.startsWith('gpt-image-2')) return MODEL_CATALOG['gpt-image-2']
+  return undefined
 }
 
 function billingModeLabel(mode: BillingMode | null): string {
@@ -444,23 +423,20 @@ function priceRows(model: MarketplaceModel): Array<{ label: string; value: strin
 }
 
 function modelDescription(model: MarketplaceModel): string {
-  return model.description || modelDescriptionFromName(model.name, model.platform)
-}
-
-function modelDescriptionFromName(name: string, platform: string): string {
-  const lower = name.toLowerCase()
+  const catalog = catalogForModel(model.name)
+  if (catalog?.description) return catalog.description
+  const lower = model.name.toLowerCase()
   if (lower.includes('image') || lower.includes('banana')) return '生图模型，看文档教程接入。'
   if (lower.includes('haiku')) return '轻量快速模型，适合低成本高频使用。简单问答、总结、改写、基础文案、速度快、成本低。'
   if (lower.includes('mini') || lower.includes('flash')) return '高性价比版本，适合大多数用户。日常聊天、问答、文案、轻量代码便宜、速度快、性价比高。'
   if (lower.includes('codex') || lower.includes('code')) return '编程与代码任务模型，适合代码生成、调试、重构、评审和自动化开发。'
   if (lower.includes('opus') || lower.includes('sonnet') || lower.includes('gpt-5')) return '高性能通用大模型，适合复杂问答、写作、代码、分析、总结和多步骤任务，综合能力强。'
-  return `${platformLabel(platform)} 模型，适合通用对话、内容生成和工具调用。`
+  return `${platformLabel(model.platform)} 模型，适合通用对话、内容生成和工具调用。`
 }
 
 function money(value: number | null | undefined): string {
   const n = Number(value ?? 0)
-  const digits = n >= 1 ? 4 : 4
-  return `$${n.toFixed(digits)}`
+  return `$${n.toFixed(4)}`
 }
 
 function platformLabel(platform: string): string {
@@ -501,20 +477,6 @@ function countByGroup(group: string): number {
 
 function countByBilling(mode: BillingMode | 'none'): number {
   return modelCards.value.filter((model) => (model.pricing?.billing_mode ?? 'none') === mode).length
-}
-
-function modelSortValue(model: MarketplaceModel): number {
-  const idx = DEFAULT_MODELS.findIndex((item) => item.key === model.key)
-  return idx >= 0 ? idx : DEFAULT_MODELS.length + Math.abs(hashCode(model.key))
-}
-
-function hashCode(input: string): number {
-  let hash = 0
-  for (let i = 0; i < input.length; i += 1) {
-    hash = (hash << 5) - hash + input.charCodeAt(i)
-    hash |= 0
-  }
-  return hash || 1
 }
 
 function resetFilters() {
@@ -568,8 +530,7 @@ async function loadChannels() {
 }
 
 function forcePageLabels() {
-  route.meta.title = '模型广场'
-  route.meta.description = '查看所有可用模型、模型 ID、供应商、分组和价格'
+  document.title = `模型广场 - ${appStore.siteName || 'CN2-API'}`
   nextTick(() => {
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
     const nodes: Text[] = []
@@ -619,5 +580,8 @@ onMounted(() => {
   border-color: rgba(45, 212, 191, 0.45);
   background: rgba(20, 184, 166, 0.16);
   color: rgb(94, 234, 212);
+}
+:global(a[href='/monitor']) {
+  display: none !important;
 }
 </style>
