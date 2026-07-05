@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { RouterView, useRouter, useRoute } from 'vue-router'
-import { onMounted, onBeforeUnmount, watch } from 'vue'
+import { nextTick, onMounted, onBeforeUnmount, watch } from 'vue'
 import Toast from '@/components/common/Toast.vue'
 import NavigationProgress from '@/components/common/NavigationProgress.vue'
 import AdminComplianceDialog from '@/components/admin/AdminComplianceDialog.vue'
@@ -18,12 +18,34 @@ const announcementStore = useAnnouncementStore()
 const adminComplianceStore = useAdminComplianceStore()
 const adminSettingsStore = useAdminSettingsStore()
 
+function normalizeMarketplaceLabels() {
+  nextTick(() => {
+    const marketplaceLinks = document.querySelectorAll<HTMLAnchorElement>('a[href="/available-channels"]')
+    marketplaceLinks.forEach((link) => {
+      const label = link.querySelector<HTMLElement>('.sidebar-label')
+      if (label) {
+        label.textContent = '模型广场'
+      }
+      if (link.title === '可用渠道' || link.title === 'Available Channels') {
+        link.title = '模型广场'
+      }
+    })
+  })
+}
+
 function updateDocumentTitle() {
+  if (route.path === '/available-channels') {
+    document.title = `模型广场 - ${appStore.siteName || 'CN2-API'}`
+    normalizeMarketplaceLabels()
+    return
+  }
+
   const customMenuItems = [
     ...(appStore.cachedPublicSettings?.custom_menu_items ?? []),
     ...(authStore.isAdmin ? adminSettingsStore.customMenuItems : []),
   ]
   document.title = resolveRouteDocumentTitle(route, appStore.siteName, customMenuItems)
+  normalizeMarketplaceLabels()
 }
 
 /**
@@ -106,6 +128,7 @@ watch(
 
       // Register visibility change listener
       document.addEventListener('visibilitychange', onVisibilityChange)
+      normalizeMarketplaceLabels()
     } else {
       // User logged out: clear data and stop polling
       subscriptionStore.clear()
@@ -122,6 +145,7 @@ router.afterEach(() => {
   if (authStore.isAuthenticated) {
     announcementStore.fetchAnnouncements()
   }
+  updateDocumentTitle()
 })
 
 onBeforeUnmount(() => {
@@ -148,6 +172,7 @@ onMounted(async () => {
 
   // Re-resolve document title now that site settings are available
   updateDocumentTitle()
+  normalizeMarketplaceLabels()
 })
 </script>
 
