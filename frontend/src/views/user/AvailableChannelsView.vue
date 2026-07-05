@@ -1,14 +1,5 @@
 <template>
   <AppLayout>
-    <transition name="copy-toast">
-      <div
-        v-if="copyToastVisible"
-        class="fixed right-6 top-6 z-[9999] rounded-xl bg-emerald-600 px-4 py-3 text-sm font-medium text-white shadow-lg shadow-emerald-900/20 dark:bg-emerald-500"
-      >
-        复制成功
-      </div>
-    </transition>
-
     <div class="grid gap-6 lg:grid-cols-[260px_1fr]">
       <aside class="space-y-6">
         <div class="flex items-center justify-between">
@@ -263,8 +254,6 @@ const selectedPlatform = ref('all')
 const selectedGroup = ref('all')
 const selectedBillingMode = ref<BillingFilter>('all')
 const copiedModel = ref('')
-const copyToastVisible = ref(false)
-let copyToastTimer: ReturnType<typeof window.setTimeout> | undefined
 
 const billingOptions: Array<{ value: BillingMode | 'none'; label: string }> = [
   { value: BILLING_MODE_TOKEN, label: '按量计费' },
@@ -499,14 +488,7 @@ function resetFilters() {
 }
 
 function showCopySuccessToast() {
-  copyToastVisible.value = true
-  if (copyToastTimer) {
-    window.clearTimeout(copyToastTimer)
-  }
-  copyToastTimer = window.setTimeout(() => {
-    copyToastVisible.value = false
-    copyToastTimer = undefined
-  }, 3000)
+  appStore.showSuccess('复制成功', 3000)
 }
 
 async function copyModelId(modelId: string) {
@@ -617,15 +599,6 @@ onMounted(() => {
   border-color: rgba(45, 212, 191, 0.45);
   background: rgba(20, 184, 166, 0.16);
   color: rgb(94, 234, 212);
-}
-.copy-toast-enter-active,
-.copy-toast-leave-active {
-  transition: opacity 0.18s ease, transform 0.18s ease;
-}
-.copy-toast-enter-from,
-.copy-toast-leave-to {
-  opacity: 0;
-  transform: translateY(-8px);
 }
 :global(a[href='/monitor']) {
   display: none !important;
