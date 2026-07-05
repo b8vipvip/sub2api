@@ -108,7 +108,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, defineComponent, h } from 'vue'
 import AppLayout from '@/components/layout/AppLayout.vue'
 import { useAppStore } from '@/stores/app'
 
@@ -203,12 +203,8 @@ async function copySnippet(code: string) {
     appStore.showError('复制失败，请手动复制代码')
   }
 }
-</script>
 
-<script lang="ts">
-import { defineComponent, h } from 'vue'
-
-export const DocSection = defineComponent({
+const DocSection = defineComponent({
   name: 'DocSection',
   props: {
     id: { type: String, required: true },
@@ -226,7 +222,7 @@ export const DocSection = defineComponent({
   },
 })
 
-export const StepCard = defineComponent({
+const StepCard = defineComponent({
   name: 'StepCard',
   props: {
     index: { type: String, required: true },
@@ -242,7 +238,7 @@ export const StepCard = defineComponent({
   },
 })
 
-export const CodeBlock = defineComponent({
+const CodeBlock = defineComponent({
   name: 'CodeBlock',
   props: {
     title: { type: String, required: true },
@@ -264,7 +260,7 @@ export const CodeBlock = defineComponent({
   },
 })
 
-export const EndpointCard = defineComponent({
+const EndpointCard = defineComponent({
   name: 'EndpointCard',
   props: {
     method: { type: String, required: true },
@@ -282,7 +278,7 @@ export const EndpointCard = defineComponent({
   },
 })
 
-export const InfoCard = defineComponent({
+const InfoCard = defineComponent({
   name: 'InfoCard',
   props: {
     title: { type: String, required: true },
