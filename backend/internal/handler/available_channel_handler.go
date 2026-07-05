@@ -178,7 +178,7 @@ func (h *AvailableChannelHandler) List(c *gin.Context) {
 	response.Success(c, out)
 }
 
-func groupsToUserAvailable(groups []service.AvailableGroupRef) []userAvailableGroup {
+func groupsToUserAvailable(groups []service.Group) []userAvailableGroup {
 	out := make([]userAvailableGroup, 0, len(groups))
 	seen := make(map[int64]struct{}, len(groups))
 	for _, g := range groups {
