@@ -157,15 +157,16 @@
                 {{ providerIcon(model.platform) }}
               </div>
               <div class="min-w-0 flex-1">
-                <div class="flex items-start justify-between gap-3">
+                <div class="flex min-w-0 items-center gap-2">
                   <h2 class="truncate text-lg font-semibold text-gray-900 dark:text-white" :title="model.name">
                     {{ model.name }}
                   </h2>
                   <button
                     type="button"
-                    class="rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
-                    :title="copiedModel === model.name ? '已复制' : '复制模型 ID'"
-                    @click="copyModelId(model.name)"
+                    class="flex-shrink-0 rounded-lg p-1.5 text-gray-400 transition hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+                    :title="copiedModel === model.name ? '已复制' : '复制模型id'"
+                    aria-label="复制模型id"
+                    @click.stop="copyModelId(model.name)"
                   >
                     <Icon name="copy" size="sm" />
                   </button>
@@ -504,18 +505,30 @@ async function copyVisibleModelIds() {
 }
 
 async function copyText(text: string) {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text)
-    return
+  try {
+    if (navigator.clipboard?.writeText && window.isSecureContext) {
+      await navigator.clipboard.writeText(text)
+      return
+    }
+  } catch {
+    // Fall back to textarea copy below for browsers that expose clipboard but reject it on HTTP.
   }
+
   const textarea = document.createElement('textarea')
   textarea.value = text
+  textarea.setAttribute('readonly', 'readonly')
   textarea.style.position = 'fixed'
+  textarea.style.left = '-9999px'
+  textarea.style.top = '0'
   textarea.style.opacity = '0'
   document.body.appendChild(textarea)
+  textarea.focus()
   textarea.select()
-  document.execCommand('copy')
+  const ok = document.execCommand('copy')
   document.body.removeChild(textarea)
+  if (!ok) {
+    throw new Error('copy failed')
+  }
 }
 
 async function loadChannels() {
